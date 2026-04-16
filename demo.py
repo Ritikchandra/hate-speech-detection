@@ -1,20 +1,29 @@
 import torch
 import soundfile as sf
+import whisper
 from transformers import RobertaTokenizer
 from model import MultimodalIntentModel
 import config
 
-# LOAD MODEL
+# LOAD MODELS
 model = MultimodalIntentModel()
 model.eval()
 
 tokenizer = RobertaTokenizer.from_pretrained(config.MODEL_NAME_TEXT)
 
-# INPUT (MANUAL TEXT)
-text = "Play some music"
+# LOAD WHISPER (use small model for speed)
+whisper_model = whisper.load_model("tiny")
+
+# INPUT AUDIO
 audio_path = "audio1.wav"
 
-# TEXT PROCESSING
+# ===== STEP 1: AUDIO → TEXT =====
+result = whisper_model.transcribe(audio_path)
+text = result["text"].strip()
+
+print("\n[Transcription]:", text)
+
+# ===== STEP 2: TEXT → TOKENS =====
 enc = tokenizer(
     text,
     padding="max_length",
@@ -26,7 +35,7 @@ enc = tokenizer(
 input_ids = enc["input_ids"]
 attention_mask = enc["attention_mask"]
 
-# AUDIO PROCESSING
+# ===== STEP 3: AUDIO → FEATURES =====
 waveform, sr = sf.read(audio_path)
 audio = torch.tensor(waveform, dtype=torch.float32)
 
@@ -35,17 +44,18 @@ if len(audio.shape) > 1:
 
 audio = audio.unsqueeze(0)
 
-# LABEL (for loss)
+# LABEL (dummy for loss)
 label = torch.tensor([config.label2id["PlayMusic"]])
 
-# RUN
+# ===== STEP 4: MODEL =====
 with torch.no_grad():
     loss, output = model(input_ids, attention_mask, audio, label)
 
 pred = output.argmax(dim=1).item()
 
-print("\n===== DEMO OUTPUT =====")
-print("Text Input:", text)
-print("Predicted Class:", pred)
+# ===== OUTPUT =====
+print("\n===== FINAL OUTPUT =====")
+print("Audio Input:", audio_path)
+print("Transcribed Text:", text)
 print("Predicted Intent:", config.id2label[pred])
 print("Loss:", loss.item())
