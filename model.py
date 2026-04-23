@@ -6,20 +6,31 @@ import config
 
 
 class MultimodalIntentModel(nn.Module):
-    def __init__(self):
+    def __init__(self, num_classes):
         super().__init__()
 
-        # TEXT BRANCH
         self.text_model = RobertaModel.from_pretrained(config.MODEL_NAME_TEXT)
-        self.text_fc = nn.Linear(768, config.NUM_CLASSES)
-
-        # AUDIO BRANCH
         self.audio_model = Wav2Vec2Model.from_pretrained(config.MODEL_NAME_AUDIO)
-        self.audio_fc = nn.Linear(768, config.NUM_CLASSES)
 
-        # FUSION
+        # 🔥 PARTIAL UNFREEZING (KEY CHANGE)
+        for name, param in self.text_model.named_parameters():
+            if "encoder.layer.10" in name or "encoder.layer.11" in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+
+        for name, param in self.audio_model.named_parameters():
+            if "encoder.layers.10" in name or "encoder.layers.11" in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+
+        # Classifiers
+        self.text_fc = nn.Linear(768, num_classes)
+        self.audio_fc = nn.Linear(768, num_classes)
+
         self.fusion_fc1 = nn.Linear(768 * 2, 512)
-        self.fusion_fc2 = nn.Linear(512, config.NUM_CLASSES)
+        self.fusion_fc2 = nn.Linear(512, num_classes)
 
     def forward(self, input_ids, attention_mask, audio, labels=None):
 

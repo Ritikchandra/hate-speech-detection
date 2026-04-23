@@ -1,9 +1,8 @@
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import config
 import torch.nn.functional as F
-
+import config
 
 def collate_fn(batch):
     input_ids = torch.stack([x["input_ids"] for x in batch])
@@ -27,15 +26,30 @@ def collate_fn(batch):
         "label": labels
     }
 
+def evaluate(model, dataloader, device):
+    model.eval()
+    correct = 0
+    total = 0
 
-def train(model, dataset):
+    with torch.no_grad():
+        for batch in dataloader:
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            audio = batch["audio"].to(device)
+            labels = batch["label"].to(device)
 
-    dataloader = DataLoader(
-        dataset,
-        batch_size=config.BATCH_SIZE,
-        shuffle=True,
-        collate_fn=collate_fn
-    )
+            outputs = model(input_ids, attention_mask, audio)
+            preds = outputs.argmax(dim=1)
+
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+
+    return correct / total
+
+def train(model, train_dataset, val_dataset):
+
+    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=collate_fn)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LR)
 
@@ -46,8 +60,7 @@ def train(model, dataset):
         model.train()
         total_loss = 0
 
-        for batch in tqdm(dataloader):
-
+        for batch in tqdm(train_loader):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             audio = batch["audio"].to(device)
@@ -61,4 +74,8 @@ def train(model, dataset):
 
             total_loss += loss.item()
 
-        print(f"Epoch {epoch+1}, Loss: {total_loss/len(dataloader)}")
+        print(f"\nEpoch {epoch+1}, Loss: {total_loss/len(train_loader):.4f}")
+
+        val_acc = evaluate(model, val_loader, device)
+        print(f"Validation Accuracy: {val_acc:.4f}")
+        torch.save(model.state_dict(), "model1.pth")
